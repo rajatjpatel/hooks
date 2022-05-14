@@ -1,0 +1,52 @@
+vi /etc/libvirt/hooks/network
+#!/bin/bash
+if [ "$1" == "default" ] && [ "$2" == "started" ]; then
+    resolvectl dns virbr0 192.168.122.1
+    resolvectl domain virbr0 '~kvm'
+fi
+
+#############################
+virsh net-edit default
+<network>
+  <name>default</name>
+  <uuid>947ecc5a-d4a3-4b3d-a6f5-f22507a33a37</uuid>
+  <forward mode='nat'>
+    <nat>
+      <port start='1024' end='65535'/>
+    </nat>
+  </forward>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <mac address='52:54:00:5e:0d:72'/>
+  <domain name='kvm' localOnly='yes'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+
+##################################
+After rebooting, the DNS resolution on the host works as expected:
+host ios.kvm
+
+resolvectl status virbr0
+
+#####################################
+vi /etc/systemd/system/dns-virbr0.service
+[Unit]
+Description=Per-link DNS configuration for virbr0
+BindsTo=sys-subsystem-net-devices-virbr0.device
+After=sys-subsystem-net-devices-virbr0.device systemd-resolved.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/resolvectl dns virbr0 192.168.122.1
+ExecStart=/usr/bin/resolvectl domain virbr0 '~kvm'
+
+[Install]
+WantedBy=sys-subsystem-net-devices-virbr0.device
+##################################################
+systemctl enable dns-virbr0.service
+resolvectl status virbr0
+resolvectl query ios.kvm
+host ios.kvm
